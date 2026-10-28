@@ -11,6 +11,7 @@ fresh database or an existing one.
 from __future__ import annotations
 
 import asyncio
+import os
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -223,8 +224,9 @@ PRODUCTS: list[dict] = [
     },
 ]
 
-ADMIN_EMAIL = "admin@bansikunj.example.com"
-ADMIN_PASSWORD = "AdminPass123"
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@bansikunj.example.com")
+#: Local development fallback only. Hosted deployments must set ADMIN_PASSWORD.
+DEFAULT_ADMIN_PASSWORD = "AdminPass123"
 
 
 def slugify(name: str) -> str:
@@ -271,17 +273,27 @@ async def seed(session: AsyncSession) -> None:
 
     admin = await session.scalar(select(User).where(User.email == ADMIN_EMAIL))
     if admin is None:
+        password = os.getenv("ADMIN_PASSWORD")
+        if not password:
+            if get_settings().ENVIRONMENT == "local":
+                password = DEFAULT_ADMIN_PASSWORD
+            else:
+                print(
+                    "admin not created: set ADMIN_PASSWORD "
+                    f"to create {ADMIN_EMAIL}"
+                )
+                return
         from ..core.security import hash_password
 
         admin = User(
             email=ADMIN_EMAIL,
             full_name="Catalogue Admin",
-            hashed_password=hash_password(ADMIN_PASSWORD),
+            hashed_password=hash_password(password),
             role=Role.ADMIN,
             is_active=True,
         )
         session.add(admin)
-        print(f"created admin {ADMIN_EMAIL} / {ADMIN_PASSWORD}")
+        print(f"created admin {ADMIN_EMAIL}")
     else:
         print(f"admin {ADMIN_EMAIL} already exists")
 

@@ -5,7 +5,7 @@ services:
     plan: free
     region: singapore
     branch: main
-    buildCommand: pip install -r requirements.txt && alembic upgrade head
+    buildCommand: pip install -r requirements.txt && alembic upgrade head && python -m app.scripts.seed_catalogue
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     autoDeploy: true
@@ -25,9 +25,11 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: FRONTEND_URL
-        sync: false
-      - key: CORS_ORIGINS
-        sync: false
+        value: http://localhost:4200
+      - key: ADMIN_EMAIL
+        value: admin@bansikunj.example.com
+      - key: ADMIN_PASSWORD
+        generateValue: true
       - key: DB_POOL_RECYCLE
         value: "300"
       - key: DB_POOL_PRE_PING
