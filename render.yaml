@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: bansikunj-api
+    runtime: python
+    plan: free
+    region: singapore
+    branch: main
+    buildCommand: pip install -r requirements.txt && alembic upgrade head
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.3
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: LOG_FORMAT
+        value: json
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: DB_POOL_RECYCLE
+        value: "300"
+      - key: DB_POOL_PRE_PING
+        value: "true"
