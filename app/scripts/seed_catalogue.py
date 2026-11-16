@@ -300,7 +300,16 @@ async def seed(session: AsyncSession) -> None:
 
 async def main() -> None:
     settings = get_settings()
-    print(f"seeding {settings.POSTGRES_DB} on {settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}")
+    if settings.DATABASE_URL is not None:
+        # Avoid printing credentials from the DSN.
+        from urllib.parse import urlsplit
+
+        parts = urlsplit(settings.DATABASE_URL.get_secret_value())
+        target_db = (parts.path or "").lstrip("/") or settings.POSTGRES_DB
+        target = f"{parts.hostname or settings.POSTGRES_HOST}:{parts.port or settings.POSTGRES_PORT}/{target_db}"
+        print(f"seeding database at {target}")
+    else:
+        print(f"seeding {settings.POSTGRES_DB} on {settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}")
     async with AsyncSessionLocal() as session:
         await seed(session)
         await session.commit()
