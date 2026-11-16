@@ -145,6 +145,28 @@ class OrderRepository:
         )
         return int(result.scalar_one())
 
+    async def list_all(
+        self,
+        *,
+        status: OrderStatus | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[Order]:
+        """All orders, newest first. Administrative reads only."""
+        stmt = select(Order).options(*_item_options())
+        if status is not None:
+            stmt = stmt.where(Order.status == status)
+        stmt = stmt.order_by(Order.created_at.desc(), Order.id.desc()).limit(limit).offset(offset)
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def count_all(self, *, status: OrderStatus | None = None) -> int:
+        stmt = select(func.count()).select_from(Order)
+        if status is not None:
+            stmt = stmt.where(Order.status == status)
+        result = await self.session.execute(stmt)
+        return int(result.scalar_one())
+
     async def status_history(self, order_id: uuid.UUID | str) -> list[OrderStatusHistory]:
         result = await self.session.execute(
             select(OrderStatusHistory)

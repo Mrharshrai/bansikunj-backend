@@ -256,6 +256,15 @@ class OrderOut(BaseModel):
         )
 
 
+class OrderStatusUpdate(BaseModel):
+    """Administrative status transition."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    status: OrderStatus
+    note: str | None = Field(default=None, max_length=500)
+
+
 class OrderPage(BaseModel):
     """Envelope ``data`` for a paginated order listing."""
 
@@ -281,6 +290,7 @@ __all__ = [
     "OrderItemOut",
     "OrderOut",
     "OrderPage",
+    "OrderStatusUpdate",
     "ShippingAddressIn",
     "ShippingAddressOut",
 ]

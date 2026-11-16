@@ -117,6 +117,14 @@ class OrderService:
         rows = await self.orders.list_for_user(user_id, limit=limit, offset=(page - 1) * limit)
         return rows, total
 
+    async def list_all(
+        self, *, status: OrderStatus | None = None, page: int = 1, limit: int = 20
+    ) -> tuple[list[Order], int]:
+        """All orders for administrative views."""
+        total = await self.orders.count_all(status=status)
+        rows = await self.orders.list_all(status=status, limit=limit, offset=(page - 1) * limit)
+        return rows, total
+
     async def get(self, user_id: uuid.UUID, order_id: uuid.UUID) -> Order:
         """One of the caller's own orders.
 
@@ -124,6 +132,13 @@ class OrderService:
         403 -- a 403 would confirm that the order exists.
         """
         order = await self.orders.get_by_id(user_id, order_id)
+        if order is None:
+            raise NotFoundError("Order not found", error_code="order_not_found")
+        return order
+
+    async def get_any(self, order_id: uuid.UUID) -> Order:
+        """Fetch any order for administrative reads."""
+        order = await self.orders.get_any_by_id(order_id)
         if order is None:
             raise NotFoundError("Order not found", error_code="order_not_found")
         return order
@@ -261,12 +276,17 @@ class OrderService:
     ) -> Order:
         """Move an order to ``target``, validating the transition.
 
-        Used by the customer cancellation path and, from Phase 8, by the admin
-        status endpoint. The transition table is enforced here rather than in
-        the endpoint so that no caller can bypass it.
+        Used by the customer cancellation path and by the admin status endpoint.
+        The transition table is enforced here rather than in the endpoint so that
+        no caller can bypass it. Cancelling via this path releases held stock
+        when appropriate.
         """
         self.assert_transition(order.status, target)
         previous = order.status
+
+        if target is OrderStatus.CANCELLED and previous in STOCK_HELD_STATUSES:
+            await self._release_stock(order)
+
         await self.orders.set_status(order, target, changed_by=changed_by, note=note)
         logger.info(
             "order.status_changed",
@@ -275,6 +295,18 @@ class OrderService:
             status=target.value,
         )
         return await self.orders.reload(order)
+
+    async def admin_update_status(
+        self, order_id: uuid.UUID, target: OrderStatus, *, changed_by: uuid.UUID, note: str | None = None
+    ) -> Order:
+        """Administrative status transition for any order."""
+        order = await self.get_any(order_id)
+        if target is OrderStatus.CANCELLED and order.payment_status is PaymentStatus.PAID:
+            raise ConflictError(
+                "A paid order must be refunded before it can be cancelled",
+                error_code="paid_order_requires_refund",
+            )
+        return await self.advance(order, target, changed_by=changed_by, note=note)
 
     # ------------------------------------------------------------ status rules
     @staticmethod

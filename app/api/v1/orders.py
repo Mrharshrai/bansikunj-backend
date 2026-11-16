@@ -1,13 +1,8 @@
 """Order endpoints.
 
-Every route is owner-scoped: a caller sees only their own orders, and another
-customer's order id is a 404 rather than a 403 so the endpoint cannot be used to
-confirm that an order exists.
-
-The three routes are placement, listing, and cancellation. Administrative status
-transitions (confirm, ship, deliver) belong to Phase 8, but the transition rules
-they will use already live in :class:`~app.services.order_service.OrderService`
-so that they cannot be implemented inconsistently.
+Customer routes are owner-scoped: a caller sees only their own orders, and
+another customer's order id is a 404 rather than a 403. Admin routes allow
+listing all orders and advancing order status.
 """
 from __future__ import annotations
 
@@ -16,13 +11,15 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Path, Query, status
 
-from ...core.dependencies import CurrentUser, DbSessionDep
+from ...core.dependencies import CurrentUser, DbSessionDep, require_admin
 from ...core.envelope import SuccessEnvelope
+from ...models.order import OrderStatus
 from ...models.user import User
-from ...schemas.order import OrderCreate, OrderOut, OrderPage
+from ...schemas.order import OrderCreate, OrderOut, OrderPage, OrderStatusUpdate
 from ...services.order_service import OrderService
 
 router = APIRouter(prefix="/orders", tags=["orders"])
+AdminDep = Annotated[User, Depends(require_admin)]
 
 
 def get_order_service(session: DbSessionDep) -> OrderService:
@@ -67,6 +64,64 @@ async def list_orders(
         data=OrderPage.build(
             [OrderOut.from_entity(row) for row in rows], total=total, page=page, limit=limit
         ),
+    )
+
+
+@router.get(
+    "/admin/all",
+    response_model=SuccessEnvelope[OrderPage],
+    summary="List all orders (admin)",
+)
+async def list_all_orders(
+    service: OrderServiceDep,
+    _: AdminDep,
+    status_filter: Annotated[OrderStatus | None, Query(alias="status")] = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> SuccessEnvelope[OrderPage]:
+    """All orders across customers, newest first."""
+    rows, total = await service.list_all(status=status_filter, page=page, limit=limit)
+    return SuccessEnvelope[OrderPage](
+        message="Orders retrieved successfully",
+        data=OrderPage.build(
+            [OrderOut.from_entity(row) for row in rows], total=total, page=page, limit=limit
+        ),
+    )
+
+
+@router.get(
+    "/admin/{order_id}",
+    response_model=SuccessEnvelope[OrderOut],
+    summary="Get any order (admin)",
+)
+async def get_any_order(
+    order_id: Annotated[uuid.UUID, Path(description="Order id")],
+    service: OrderServiceDep,
+    _: AdminDep,
+) -> SuccessEnvelope[OrderOut]:
+    order = await service.get_any(order_id)
+    return SuccessEnvelope[OrderOut](
+        message="Order retrieved successfully", data=OrderOut.from_entity(order)
+    )
+
+
+@router.patch(
+    "/admin/{order_id}/status",
+    response_model=SuccessEnvelope[OrderOut],
+    summary="Update order status (admin)",
+)
+async def update_order_status(
+    order_id: Annotated[uuid.UUID, Path(description="Order id")],
+    payload: OrderStatusUpdate,
+    service: OrderServiceDep,
+    admin: AdminDep,
+) -> SuccessEnvelope[OrderOut]:
+    """Advance an order through the allowed status transitions."""
+    order = await service.admin_update_status(
+        order_id, payload.status, changed_by=admin.id, note=payload.note
+    )
+    return SuccessEnvelope[OrderOut](
+        message="Order status updated successfully", data=OrderOut.from_entity(order)
     )
 
 
